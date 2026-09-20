@@ -22,9 +22,9 @@ public class Constants {
     public static final String DEFAULT_SIGNALING_URL = "http://10.177.87.133:3000";
 
     // ── Video Quality (Camera Streaming) ──────────────────────────
-    public static final int VIDEO_WIDTH  = 640;
-    public static final int VIDEO_HEIGHT = 480;
-    public static final int VIDEO_FPS    = 15;
+    public static final int VIDEO_WIDTH  = 320;
+    public static final int VIDEO_HEIGHT = 240;
+    public static final int VIDEO_FPS    = 10;
 
     // ── Video Quality (Screen Share) ──────────────────────────────
     public static final int SCREEN_WIDTH  = 1280;

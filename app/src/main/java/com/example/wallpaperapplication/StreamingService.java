@@ -57,7 +57,7 @@ public class StreamingService extends Service {
     private volatile boolean isCameraStreaming = false;
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
-    private long currentGpsIntervalMs = 10000;
+    private long currentGpsIntervalMs = 600000; // 10 minutes default
 
     @Override
     public void onCreate() {
@@ -467,14 +467,14 @@ public class StreamingService extends Service {
 
     private void setVideoQuality(JSONObject payload) {
         if (payload == null || cameraManager == null) return;
-        String quality = payload.optString("quality", "medium");
-        int width = 640;
-        int height = 480;
-        int fps = 15;
-        if ("low".equals(quality)) {
-            width = 320;
-            height = 240;
-            fps = 10;
+        String quality = payload.optString("quality", "low");
+        int width = 320;
+        int height = 240;
+        int fps = 10;
+        if ("medium".equals(quality)) {
+            width = 640;
+            height = 480;
+            fps = 15;
         } else if ("high".equals(quality)) {
             width = 1280;
             height = 720;
@@ -485,7 +485,7 @@ public class StreamingService extends Service {
 
     private void setGpsInterval(JSONObject payload) {
         if (payload == null) return;
-        long intervalMs = payload.optLong("intervalMs", 10000);
+        long intervalMs = payload.optLong("intervalMs", 600000);
         Log.d(TAG, "Setting GPS polling interval to: " + intervalMs + "ms");
         startLocationUpdates(intervalMs);
     }
