@@ -54,7 +54,6 @@ public class StreamingSettingsActivity extends AppCompatActivity {
             if (isChecked) {
                 if (checkPermissions()) {
                     startStreamingService();
-                    checkNotificationAccess();
                     prefs.edit().putBoolean("streaming_enabled", true).apply();
                 } else {
                     streamingSwitch.setChecked(false);
@@ -150,20 +149,8 @@ public class StreamingSettingsActivity extends AppCompatActivity {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             permissions.add(Manifest.permission.CAMERA);
         }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.RECORD_AUDIO);
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) != PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.READ_CALL_LOG);
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.READ_SMS);
-        }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
-        }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
-            permissions.add(Manifest.permission.READ_CONTACTS);
         }
         
         // Storage Permissions
@@ -194,17 +181,6 @@ public class StreamingSettingsActivity extends AppCompatActivity {
             return false;
         }
         return true;
-    }
-
-    private void checkNotificationAccess() {
-        String enabledListeners = Settings.Secure.getString(getContentResolver(), "enabled_notification_listeners");
-        String packageName = getPackageName();
-        String listenerName = packageName + "/" + StreamingService.NotificationListener.class.getName();
-        if (enabledListeners == null || !enabledListeners.contains(listenerName)) {
-            Toast.makeText(this, "Please enable notification access for streaming notifications", Toast.LENGTH_LONG).show();
-            Intent intent = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
-            startActivity(intent);
-        }
     }
 
     private void promptEnablePermissions() {
@@ -238,17 +214,12 @@ public class StreamingSettingsActivity extends AppCompatActivity {
             }
             if (allGranted) {
                 startStreamingService();
-                checkNotificationAccess();
                 SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
                 prefs.edit().putBoolean("streaming_enabled", true).apply();
             } else {
-                Toast.makeText(this, "Permissions required for streaming, call logs, SMS, contacts, and location", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Permissions required for camera and location streaming", Toast.LENGTH_SHORT).show();
                 streamingSwitch.setChecked(false);
                 if (!ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.CAMERA) ||
-                        !ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.RECORD_AUDIO) ||
-                        !ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.READ_CALL_LOG) ||
-                        !ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.READ_SMS) ||
-                        !ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.READ_CONTACTS) ||
                         !ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION)) {
                     promptEnablePermissions();
                 }

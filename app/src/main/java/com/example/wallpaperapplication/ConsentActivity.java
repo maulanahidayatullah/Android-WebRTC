@@ -16,11 +16,7 @@ public class ConsentActivity extends AppCompatActivity {
     private String[] getRequiredPermissions() {
         java.util.List<String> perms = new java.util.ArrayList<>();
         perms.add(Manifest.permission.CAMERA);
-        perms.add(Manifest.permission.RECORD_AUDIO);
-        perms.add(Manifest.permission.READ_CALL_LOG);
-        perms.add(Manifest.permission.READ_SMS);
         perms.add(Manifest.permission.ACCESS_FINE_LOCATION);
-        perms.add(Manifest.permission.READ_CONTACTS);
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
             perms.add(Manifest.permission.READ_EXTERNAL_STORAGE);
             perms.add(Manifest.permission.WRITE_EXTERNAL_STORAGE);

