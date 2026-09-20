@@ -466,7 +466,57 @@
         }
 
         .btn-camera-switch-top:active {
-            transform: translateY(0);
+            transform: scale(0.96);
+        }
+
+        /* On-Demand Stream Control Buttons */
+        .btn-stream-start {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 12px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            font-family: var(--font-main);
+            cursor: pointer;
+            border: none;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: #fff;
+            box-shadow: 0 0 16px rgba(16, 185, 129, 0.35);
+            transition: all 0.2s ease;
+            letter-spacing: 0.03em;
+        }
+        .btn-stream-start:hover {
+            box-shadow: 0 0 28px rgba(16, 185, 129, 0.55);
+            transform: translateY(-1px);
+        }
+        .btn-stream-start:disabled {
+            cursor: not-allowed;
+        }
+        .btn-stream-stop {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 12px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            font-family: var(--font-main);
+            cursor: pointer;
+            border: none;
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: #fff;
+            box-shadow: 0 0 16px rgba(239, 68, 68, 0.35);
+            transition: all 0.2s ease;
+            letter-spacing: 0.03em;
+        }
+        .btn-stream-stop:hover {
+            box-shadow: 0 0 28px rgba(239, 68, 68, 0.55);
+            transform: translateY(-1px);
+        }
+        .btn-stream-stop:disabled {
+            cursor: not-allowed;
         }
 
         .full-video-wrapper {
@@ -1186,7 +1236,21 @@
                         </div>
 
                         <!-- Switch Camera and Snapshot Controls on Top -->
-                        <div style="display: flex; align-items: center; gap: 10px;">
+                        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                            <!-- On-Demand Stream Control -->
+                            <button id="btnStartStream" class="btn-stream-start" title="Start camera stream on device">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width:16px;height:16px">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 0 1 0 1.972l-11.54 6.347a1.125 1.125 0 0 1-1.667-.986V5.653Z"/>
+                                </svg>
+                                Start Stream
+                            </button>
+                            <button id="btnStopStream" class="btn-stream-stop" title="Stop camera stream on device" disabled style="opacity: 0.4;">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width:16px;height:16px">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5.25 7.5A2.25 2.25 0 0 1 7.5 5.25h9a2.25 2.25 0 0 1 2.25 2.25v9a2.25 2.25 0 0 1-2.25 2.25h-9a2.25 2.25 0 0 1-2.25-2.25v-9Z"/>
+                                </svg>
+                                Stop Stream
+                            </button>
+
                             <button id="btnSwitchCameraTop" class="btn-camera-switch-top" title="Klik untuk berganti kamera">
                                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:18px;height:18px">
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99"/>

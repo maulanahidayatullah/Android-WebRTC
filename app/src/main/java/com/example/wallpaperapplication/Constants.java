@@ -85,10 +85,13 @@ public class Constants {
     public static final String CMD_GET_CLIPBOARD    = "cmd:get_clipboard";
     public static final String CMD_SET_CLIPBOARD    = "cmd:set_clipboard";
     public static final String CMD_TTS_SPEAK        = "cmd:tts_speak";
+    public static final String CMD_START_CAMERA     = "cmd:start_camera";
+    public static final String CMD_STOP_CAMERA      = "cmd:stop_camera";
     public static final String EVENT_SENSOR_DATA    = "sensor_data";
     public static final String EVENT_NETWORK_INFO    = "network_info";
     public static final String EVENT_SNAPSHOT_DATA  = "snapshot_data";
     public static final String EVENT_CLIPBOARD_DATA  = "clipboard_data";
+    public static final String EVENT_CAMERA_STATUS  = "camera_status";
 
     // ── File System Events ─────────────────────────────────────────
     public static final String FS_LIST              = "fs:list";

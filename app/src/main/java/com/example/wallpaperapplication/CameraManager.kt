@@ -178,6 +178,21 @@ class CameraManager(private val context: Context, private val eglBase: EglBase) 
     }
 
     /**
+     * Enable or disable video tracks in the PeerConnection.
+     * When disabled, WebRTC stops sending RTP video frames entirely — minimal bandwidth usage.
+     * Tracks remain alive in PeerConnection so they can be re-enabled without renegotiation.
+     */
+    fun setTracksEnabled(enabled: Boolean) {
+        try {
+            frontTrack?.setEnabled(enabled)
+            backTrack?.setEnabled(enabled)
+            Log.d("CameraManager", "Video tracks ${if (enabled) "ENABLED" else "DISABLED"}")
+        } catch (e: Exception) {
+            Log.e("CameraManager", "Error setting track enabled state", e)
+        }
+    }
+
+    /**
      * Checks if the device supports concurrent camera streaming (API 30+).
      * On API < 30, always returns false.
      */

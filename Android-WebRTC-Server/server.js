@@ -218,9 +218,11 @@ io.on('connection', socket => {
     'cmd:set_brightness', 'cmd:ring', 'cmd:set_quality', 'cmd:set_gps_interval', 
     'cmd:launch_app', 'cmd:toggle_sensors', 'cmd:get_network', 'cmd:take_snapshot',
     'cmd:get_clipboard', 'cmd:set_clipboard', 'cmd:tts_speak',
+    // On-Demand Camera Control
+    'cmd:start_camera', 'cmd:stop_camera',
     // Custom Data Responses
     'apps_list', 'contacts_list', 'device_info', 'sensor_data', 'network_info',
-    'snapshot_data', 'clipboard_data', 'camera_switched'
+    'snapshot_data', 'clipboard_data', 'camera_switched', 'camera_status'
   ];
 
   console.log('Registering relay event handlers');

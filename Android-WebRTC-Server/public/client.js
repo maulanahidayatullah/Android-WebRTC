@@ -160,6 +160,12 @@ let localMicSender = null;
 // Chunked Download State
 let activeDownloads = {}; 
 let isTalkbackActive = false;
+let isCameraStreamingActive = false;
+
+// Stream Control Buttons
+const btnStartStream = document.getElementById('btnStartStream');
+const btnStopStream = document.getElementById('btnStopStream');
+
 
 // Graphing Buffer State
 const sensorHistory = [];
@@ -200,6 +206,61 @@ function logDebug(message) {
 function reconnectSocket() {
   updateStatus('Reconnecting to server...');
   socket.connect();
+}
+
+// ─────────────────────────────────────────────────────────────
+// Stream Control (On-Demand Camera)
+// ─────────────────────────────────────────────────────────────
+
+function updateStreamControlUI(isStreaming) {
+  isCameraStreamingActive = isStreaming;
+  if (btnStartStream) {
+    btnStartStream.disabled = isStreaming;
+    btnStartStream.style.opacity = isStreaming ? '0.4' : '1';
+  }
+  if (btnStopStream) {
+    btnStopStream.disabled = !isStreaming;
+    btnStopStream.style.opacity = !isStreaming ? '0.4' : '1';
+  }
+  // Update tag indicators
+  if (isStreaming) {
+    if (tagActiveCamera) {
+      tagActiveCamera.textContent = 'STREAMING';
+      tagActiveCamera.style.background = 'rgba(16, 185, 129, 0.2)';
+      tagActiveCamera.style.color = 'var(--success)';
+      tagActiveCamera.style.borderColor = 'var(--success)';
+    }
+    logDebug('[STREAM] Camera stream started on device');
+  } else {
+    if (tagActiveCamera) {
+      tagActiveCamera.textContent = 'STANDBY';
+      tagActiveCamera.style.background = 'rgba(234, 179, 8, 0.12)';
+      tagActiveCamera.style.color = 'var(--warning)';
+      tagActiveCamera.style.borderColor = 'var(--warning)';
+    }
+    logDebug('[STREAM] Camera stream stopped on device');
+  }
+}
+
+if (btnStartStream) {
+  btnStartStream.addEventListener('click', () => {
+    if (!androidClientId) {
+      logDebug('[STREAM] No Android device connected');
+      return;
+    }
+    logDebug('[CMD] Sending cmd:start_camera to device');
+    socket.emit('cmd:start_camera', { to: androidClientId });
+    updateStreamControlUI(true);
+  });
+}
+
+if (btnStopStream) {
+  btnStopStream.addEventListener('click', () => {
+    if (!androidClientId) return;
+    logDebug('[CMD] Sending cmd:stop_camera to device');
+    socket.emit('cmd:stop_camera', { to: androidClientId });
+    updateStreamControlUI(false);
+  });
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1196,6 +1257,13 @@ socket.on('clipboard_data', data => {
   }
 });
 
+socket.on('camera_status', data => {
+  if (data && data.streaming !== undefined) {
+    logDebug(`[STREAM] Camera status from device: streaming=${data.streaming}`);
+    updateStreamControlUI(data.streaming);
+  }
+});
+
 socket.on('location', data => {
   updateMap(data.latitude, data.longitude);
 });
@@ -1381,6 +1449,9 @@ socket.on('android-client-disconnected', () => {
     videoFront.srcObject = null;
     videoBack.srcObject = null;
   }
+  // Reset streaming state on disconnect
+  updateStreamControlUI(false);
+  androidClientId = null;
   tagFront.textContent = 'FRONT DISCONNECTED';
   tagFront.style.background = 'rgba(239, 68, 68, 0.15)';
   tagFront.style.color = 'var(--danger)';

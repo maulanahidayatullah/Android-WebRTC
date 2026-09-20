@@ -44,11 +44,6 @@ public class DataSyncWorker extends Worker {
             Log.e(TAG, "Failed to restart service from worker", e);
         }
 
-        // 2. Collect & Upload Data (HTTP Fallback)
-        // Since we can't easily access the Service's Socket.IO instance, we upload via HTTP
-        // or we can rely on the Service restart above to handle it.
-        // The user asked to "Replace manual 30-second data polling".
-        // So we will perform the collection here and upload.
         
         uploadData(context);
 
