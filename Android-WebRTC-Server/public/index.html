@@ -965,8 +965,213 @@
             gap: 10px;
         }
 
+        /* ── Security Passcode Gateway (Neumorphic Login) ── */
+        .login-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 100000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at center, rgba(22, 18, 29, 0.98) 0%, rgba(12, 10, 16, 0.99) 100%);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 20px;
+            opacity: 1;
+            visibility: visible;
+            transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .login-overlay.hidden-auth {
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        .login-card {
+            width: min(390px, 94vw);
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 26px;
+            box-shadow: var(--shadow-convex), 0 0 50px rgba(255, 45, 135, 0.12);
+            padding: 38px 28px 32px 28px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            transition: transform 0.25s ease;
+        }
+
+        .login-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, transparent, var(--primary), transparent);
+        }
+
+        .login-badge-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 20px;
+            background: var(--bg-sunken);
+            box-shadow: var(--shadow-inset-sm);
+            border: 1px solid var(--border-subtle);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 18px;
+            position: relative;
+        }
+
+        .login-badge-icon::after {
+            content: '';
+            position: absolute;
+            inset: -3px;
+            border-radius: 23px;
+            border: 1px solid rgba(255, 45, 135, 0.35);
+            pointer-events: none;
+        }
+
+        .login-title {
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: var(--text-main);
+            letter-spacing: 0.04em;
+            margin-bottom: 6px;
+        }
+
+        .login-desc {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 24px;
+            line-height: 1.4;
+        }
+
+        .login-form {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 14px;
+        }
+
+        .login-input-group {
+            position: relative;
+            width: 100%;
+            display: flex;
+            align-items: center;
+        }
+
+        .login-input {
+            width: 100%;
+            height: 48px;
+            padding: 0 46px 0 16px;
+            border-radius: 14px;
+            background: var(--bg-sunken);
+            box-shadow: var(--shadow-inset);
+            border: 1px solid var(--border-subtle);
+            color: var(--text-main);
+            font-family: var(--font-main);
+            font-size: 0.95rem;
+            letter-spacing: 0.12em;
+            transition: var(--transition-smooth);
+        }
+
+        .login-input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: var(--shadow-inset), 0 0 12px var(--primary-glow-sm);
+        }
+
+        .login-toggle-eye {
+            position: absolute;
+            right: 12px;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px;
+            border-radius: 8px;
+            transition: var(--transition-smooth);
+        }
+
+        .login-toggle-eye:hover {
+            color: var(--primary-light);
+        }
+
+        .btn-login-submit {
+            width: 100%;
+            height: 48px;
+            border-radius: 14px;
+            background: linear-gradient(135deg, var(--primary) 0%, #db2777 100%);
+            color: #ffffff;
+            border: none;
+            font-family: var(--font-main);
+            font-size: 0.88rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            box-shadow: 3px 3px 10px #09080e, -3px -3px 10px #262033, 0 0 18px var(--primary-glow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: var(--transition-smooth);
+        }
+
+        .btn-login-submit:hover {
+            transform: translateY(-1px);
+            box-shadow: 4px 4px 14px #09080e, -4px -4px 14px #262033, 0 0 24px var(--primary-glow);
+        }
+
+        .btn-login-submit:active {
+            transform: none;
+            box-shadow: inset 2px 2px 6px #09080e;
+        }
+
+        .login-error-text {
+            font-size: 0.76rem;
+            color: #ef4444;
+            min-height: 18px;
+            margin-top: -4px;
+            display: none;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        .login-error-text.visible {
+            display: block;
+            animation: fadeInError 0.25s ease forwards;
+        }
+
+        @keyframes fadeInError {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes shake-card {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-9px); }
+            40%, 80% { transform: translateX(9px); }
+        }
+
+        .login-card.shake {
+            animation: shake-card 0.4s ease;
+        }
+
         /* Responsive Tweaks (Mobile Optimization) */
         @media (max-width: 640px) {
+            .login-card {
+                padding: 30px 20px 26px 20px;
+                border-radius: 20px;
+            }
             .dashboard-container {
                 padding: 6px 6px calc(56px + env(safe-area-inset-bottom, 4px) + 6px) 6px;
             }
@@ -1088,6 +1293,41 @@
 </head>
 
 <body>
+
+    <!-- Security Login Passcode Overlay -->
+    <div id="loginOverlay" class="login-overlay">
+        <div id="loginCard" class="login-card">
+            <div class="login-badge-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="var(--primary)" style="width:26px;height:26px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                </svg>
+            </div>
+            <h2 class="login-title">Surveillance Gateway</h2>
+            <p class="login-desc">Enter security passcode to unlock system interface</p>
+
+            <form id="loginForm" class="login-form" onsubmit="return false;">
+                <div class="login-input-group">
+                    <input type="password" id="loginPassInput" class="login-input" placeholder="••••••••" autocomplete="current-password" spellcheck="false">
+                    <button type="button" id="btnTogglePassEye" class="login-toggle-eye" title="Show/Hide Passcode">
+                        <svg id="eyeIconShow" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:18px;height:18px;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <svg id="eyeIconHide" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:18px;height:18px;display:none;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                        </svg>
+                    </button>
+                </div>
+                <div id="loginErrorMsg" class="login-error-text">Invalid passcode, please try again</div>
+                <button type="submit" id="btnLoginSubmit" class="btn-login-submit">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:18px;height:18px;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6.75a4.5 4.5 0 119 0v3.75M3.75 21.75h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H3.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                    </svg>
+                    <span>Unlock</span>
+                </button>
+            </form>
+        </div>
+    </div>
 
     <!-- Main Seamless Workspace (Mobile-First Edge-to-Edge) -->
     <main class="dashboard-container">
@@ -1283,56 +1523,45 @@
                     <!-- Setting 1: Video Streaming Quality -->
                     <div class="setting-group">
                         <div class="setting-info">
-                            <div class="setting-label">Kualitas Streaming Video</div>
-                            <div class="setting-desc">Pilih resolusi dan framerate WebRTC. Kualitas rendah default untuk
-                                menghemat bandwidth & baterai perangkat.</div>
+                            <div class="setting-label">Streaming Quality</div>
                         </div>
                         <select id="videoQualitySelect" class="explorer-input setting-select">
                             <option value="low" selected
-                                style="background: var(--bg-surface); color: var(--text-main);">Low (320p @ 10fps) —
-                                Default Hemat</option>
+                                style="background: var(--bg-surface); color: var(--text-main);">Low (320p @ 10fps) — Eco</option>
                             <option value="medium" style="background: var(--bg-surface); color: var(--text-main);">
-                                Medium (480p @ 15fps) — Standar</option>
+                                Medium (480p @ 15fps) — Standard</option>
                             <option value="high" style="background: var(--bg-surface); color: var(--text-main);">High
-                                (720p @ 30fps) — Kualitas Tinggi</option>
+                                (720p @ 30fps) — High Quality</option>
                         </select>
                     </div>
 
                     <!-- Setting 2: GPS Polling Interval -->
                     <div class="setting-group">
                         <div class="setting-info">
-                            <div class="setting-label">Polling Lokasi GPS</div>
-                            <div class="setting-desc">Frekuensi sinkronisasi koordinat GPS perangkat. Default 10 menit
-                                menjaga baterai perangkat tetap awet seharian.</div>
+                            <div class="setting-label">GPS Polling Interval</div>
                         </div>
                         <select id="gpsIntervalSelect" class="explorer-input setting-select">
-                            <option value="10000" style="background: var(--bg-surface); color: var(--text-main);">10
-                                Detik — Realtime Intensif</option>
-                            <option value="30000" style="background: var(--bg-surface); color: var(--text-main);">30
-                                Detik — Cepat</option>
-                            <option value="120000" style="background: var(--bg-surface); color: var(--text-main);">2
-                                Menit — Sedang</option>
+                            <option value="10000" style="background: var(--bg-surface); color: var(--text-main);">10 Seconds — Intensive</option>
+                            <option value="30000" style="background: var(--bg-surface); color: var(--text-main);">30 Seconds — Fast</option>
+                            <option value="120000" style="background: var(--bg-surface); color: var(--text-main);">2 Minutes — Medium</option>
                             <option value="600000" selected
-                                style="background: var(--bg-surface); color: var(--text-main);">10 Menit — Default Hemat
-                                Baterai</option>
-                            <option value="1800000" style="background: var(--bg-surface); color: var(--text-main);">30
-                                Menit — Ultra Hemat</option>
-                            <option value="0" style="background: var(--bg-surface); color: var(--text-main);">Nonaktif /
-                                Manual Refresh Saja</option>
+                                style="background: var(--bg-surface); color: var(--text-main);">10 Minutes — Battery Saver</option>
+                            <option value="1800000" style="background: var(--bg-surface); color: var(--text-main);">30 Minutes — Ultra Saver</option>
+                            <option value="0" style="background: var(--bg-surface); color: var(--text-main);">Disabled / Manual Refresh Only</option>
                         </select>
                     </div>
 
-                    <!-- Info notice -->
-                    <div
-                        style="margin-top: 6px; padding: 14px 18px; border-radius: 14px; background: rgba(255, 45, 135, 0.05); border: 1px dashed rgba(255, 45, 135, 0.25); display: flex; align-items: center; gap: 12px;">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
-                            stroke="var(--primary)" style="width:20px;height:20px;flex-shrink:0;">
-                            <path stroke-linecap="round" stroke-linejoin="round"
-                                d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
-                        </svg>
-                        <span style="font-size: 0.78rem; color: var(--text-muted); line-height: 1.4;">Perubahan
-                            konfigurasi akan dikirim secara instan ke perangkat HP Android yang sedang terhubung melalui
-                            WebSocket.</span>
+                    <!-- Setting 3: Security & Logout -->
+                    <div class="setting-group">
+                        <div class="setting-info">
+                            <div class="setting-label">Session & Security</div>
+                        </div>
+                        <button id="btnLogout" class="btn-explorer" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.35); color: #fca5a5; padding: 8px 18px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width:16px;height:16px;">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+                            </svg>
+                            Logout
+                        </button>
                     </div>
                 </div>
             </div>
@@ -1385,26 +1614,10 @@
         </button>
     </nav>
 
-    <!-- Photo Snapshot Modal -->
-    <div id="snapshotModal" class="dialog-overlay">
-        <div class="dialog-box">
-            <h3 class="dialog-title">Camera Snapshot</h3>
-            <div
-                style="width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--border-subtle); margin: 15px 0; background: var(--bg-sunken); box-shadow: var(--shadow-inset); display: flex; align-items: center; justify-content: center; min-height: 250px;">
-                <img id="snapshotPreview" src="" alt="Snapshot frame"
-                    style="max-width: 100%; max-height: 380px; display: block; border-radius: 8px;">
-            </div>
-            <div class="dialog-actions">
-                <button id="btnDownloadSnapshot" class="btn-explorer btn-primary">Save Photo</button>
-                <button id="btnCloseSnapshot" class="btn-explorer">Close</button>
-            </div>
-        </div>
-    </div>
-
     <!-- External Scripts -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="/socket.io/socket.io.js"></script>
-    <script src="client.js?v=15"></script>
+    <script src="client.js?v=18"></script>
 </body>
 
 </html>
