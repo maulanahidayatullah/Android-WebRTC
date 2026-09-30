@@ -1,11 +1,8 @@
 // Surveillance Command Center Core Client Logic
 
 function getServerURL() {
-  const hostname = window.location.hostname;
-  if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.startsWith('192.168.') || hostname.startsWith('10.') || hostname.startsWith('172.')) {
-    return 'http://localhost:3000';
-  }
-  return `http://${hostname}:3000`;
+  // Uses current origin automatically (supports http/https, custom ports, and cloudflare tunnels)
+  return window.location.origin;
 }
 
 const socket = io(getServerURL(), {
