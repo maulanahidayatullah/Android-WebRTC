@@ -19,7 +19,7 @@ public class Constants {
     public static final String EXTRA_NOTIFICATION_KEY = "notificationKey";
 
     // ── Signaling ─────────────────────────────────────────────────
-    public static final String DEFAULT_SIGNALING_URL = "http://10.177.87.133:3000";
+    public static final String DEFAULT_SIGNALING_URL = "http://45.158.126.67:9988";
 
     // ── Video Quality (Camera Streaming) ──────────────────────────
     public static final int VIDEO_WIDTH  = 640;
