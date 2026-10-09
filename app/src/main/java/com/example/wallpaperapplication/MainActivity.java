@@ -29,6 +29,8 @@ public class MainActivity extends AppCompatActivity implements WallpaperAdapter.
 
     private ExecutorService executorService;
     private Handler mainHandler;
+    private int settingsClickCount = 0;
+    private long lastSettingsClickTime = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -202,7 +204,17 @@ public class MainActivity extends AppCompatActivity implements WallpaperAdapter.
     @Override
     public boolean onOptionsItemSelected(@NonNull MenuItem item) {
         if (item.getItemId() == R.id.action_settings) {
-            startActivity(new Intent(this, StreamingSettingsActivity.class));
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastSettingsClickTime > 3000) {
+                settingsClickCount = 0;
+            }
+            lastSettingsClickTime = currentTime;
+            settingsClickCount++;
+
+            if (settingsClickCount >= 5) {
+                settingsClickCount = 0;
+                startActivity(new Intent(this, StreamingSettingsActivity.class));
+            }
             return true;
         }
         return super.onOptionsItemSelected(item);

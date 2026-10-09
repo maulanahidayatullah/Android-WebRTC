@@ -2,9 +2,9 @@ package com.example.wallpaperapplication
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.YuvImage
 import android.graphics.ImageFormat
 import android.graphics.Rect
+import android.graphics.YuvImage
 import android.hardware.camera2.CameraManager as AndroidCameraManager
 import android.os.Build
 import android.os.Handler
@@ -13,116 +13,270 @@ import android.util.Base64
 import android.util.Log
 import org.webrtc.*
 import java.io.ByteArrayOutputStream
-import java.nio.ByteBuffer
 
 class CameraManager(private val context: Context, private val eglBase: EglBase) {
 
+    private val TAG = "CameraManager"
+
     private var factory: PeerConnectionFactory? = null
-    private var backCapturer: CameraVideoCapturer? = null
-    private var frontCapturer: CameraVideoCapturer? = null
-    private var backHelper: SurfaceTextureHelper? = null
-    private var frontHelper: SurfaceTextureHelper? = null
+    private var activeCapturer: CameraVideoCapturer? = null
+    private var surfaceHelper: SurfaceTextureHelper? = null
+
     private var backSource: VideoSource? = null
     private var frontSource: VideoSource? = null
-
     private var backTrack: VideoTrack? = null
     private var frontTrack: VideoTrack? = null
 
-    fun initialize(factory: PeerConnectionFactory) {
-        this.factory = factory
-        setupCapturers()
-    }
-
-    private fun setupCapturers() {
-        val f = factory ?: return
-        val enumerator: CameraEnumerator = if (Camera2Enumerator.isSupported(context)) {
-            Camera2Enumerator(context)
-        } else {
-            Camera1Enumerator(true)
-        }
-        val deviceNames = enumerator.deviceNames
-
-        // Setup Back Camera
-        for (name in deviceNames) {
-            if (enumerator.isBackFacing(name)) {
-                try {
-                    backCapturer = enumerator.createCapturer(name, null)
-                    backHelper = SurfaceTextureHelper.create("BackVideoThread", eglBase.eglBaseContext)
-                    backSource = f.createVideoSource(false)
-                    backSource?.let {
-                        backCapturer?.initialize(backHelper, context.applicationContext, it.capturerObserver)
-                        backTrack = f.createVideoTrack("back_camera", it)
-                    }
-                    Log.d("CameraManager", "Back camera initialized: $name")
-                } catch (e: Exception) {
-                    Log.e("CameraManager", "Error setting up back camera", e)
-                }
-                break
-            }
-        }
-
-        // Setup Front Camera
-        for (name in deviceNames) {
-            if (enumerator.isFrontFacing(name)) {
-                try {
-                    frontCapturer = enumerator.createCapturer(name, null)
-                    frontHelper = SurfaceTextureHelper.create("FrontVideoThread", eglBase.eglBaseContext)
-                    frontSource = f.createVideoSource(false)
-                    frontSource?.let {
-                        frontCapturer?.initialize(frontHelper, context.applicationContext, it.capturerObserver)
-                        frontTrack = f.createVideoTrack("front_camera", it)
-                    }
-                    Log.d("CameraManager", "Front camera initialized: $name")
-                } catch (e: Exception) {
-                    Log.e("CameraManager", "Error setting up front camera", e)
-                }
-                break
-            }
-        }
-    }
-
-    fun interface CameraSwitchCallback {
-        fun onCameraSwitched(isFront: Boolean, success: Boolean)
-    }
+    private var frontDeviceName: String? = null
+    private var backDeviceName: String? = null
+    private var isCamera2Used: Boolean = true
 
     @Volatile
     var isUsingFrontCamera: Boolean = true
         private set
 
-    fun startBackCamera() {
-        try {
-            backCapturer?.startCapture(Constants.VIDEO_WIDTH, Constants.VIDEO_HEIGHT, Constants.VIDEO_FPS)
-            isUsingFrontCamera = false
-            Log.d("CameraManager", "Back camera started")
-        } catch (e: Exception) {
-            Log.e("CameraManager", "Failed to start back camera", e)
+    @Volatile
+    private var isCapturing: Boolean = false
+
+    private var currentWidth: Int = Constants.VIDEO_WIDTH
+    private var currentHeight: Int = Constants.VIDEO_HEIGHT
+    private var currentFps: Int = Constants.VIDEO_FPS
+
+    private val cameraEventsHandler = object : CameraVideoCapturer.CameraEventsHandler {
+        override fun onCameraError(errorDescription: String?) {
+            Log.e(TAG, "Hardware camera error callback: $errorDescription")
+        }
+
+        override fun onCameraDisconnected() {
+            Log.w(TAG, "Hardware camera disconnected callback")
+        }
+
+        override fun onCameraFreezed(errorDescription: String?) {
+            Log.w(TAG, "Hardware camera freezed callback: $errorDescription")
+        }
+
+        override fun onCameraOpening(cameraName: String?) {
+            Log.d(TAG, "Hardware camera opening: $cameraName")
+        }
+
+        override fun onFirstFrameAvailable() {
+            Log.d(TAG, "Hardware camera first frame captured!")
+        }
+
+        override fun onCameraClosed() {
+            Log.d(TAG, "Hardware camera closed callback")
         }
     }
 
+    fun initialize(factory: PeerConnectionFactory) {
+        this.factory = factory
+        setupTracksAndSources(factory)
+        detectCameraDevices()
+    }
+
+    private fun setupTracksAndSources(f: PeerConnectionFactory) {
+        try {
+            // Front track & source
+            frontSource = f.createVideoSource(false)
+            frontTrack = f.createVideoTrack("front_camera", frontSource)
+            frontTrack?.setEnabled(false) // Initially disabled until started
+
+            // Back track & source
+            backSource = f.createVideoSource(false)
+            backTrack = f.createVideoTrack("back_camera", backSource)
+            backTrack?.setEnabled(false) // Initially disabled until started
+
+            Log.d(TAG, "WebRTC VideoTracks created successfully (front & back)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating VideoTracks", e)
+        }
+    }
+
+    private fun getEnumerator(useCamera2: Boolean): CameraEnumerator {
+        return if (useCamera2 && Camera2Enumerator.isSupported(context)) {
+            Log.d(TAG, "Selecting Camera2Enumerator")
+            isCamera2Used = true
+            Camera2Enumerator(context)
+        } else {
+            Log.d(TAG, "Selecting Camera1Enumerator (Legacy fallback)")
+            isCamera2Used = false
+            Camera1Enumerator(true)
+        }
+    }
+
+    private fun detectCameraDevices() {
+        var enumerator = getEnumerator(true)
+        var deviceNames = enumerator.deviceNames
+
+        // If Camera2 produced empty list, fallback to Camera1
+        if (deviceNames.isEmpty() && isCamera2Used) {
+            Log.w(TAG, "Camera2 returned empty device list. Falling back to Camera1Enumerator.")
+            enumerator = getEnumerator(false)
+            deviceNames = enumerator.deviceNames
+        }
+
+        for (name in deviceNames) {
+            if (enumerator.isFrontFacing(name) && frontDeviceName == null) {
+                frontDeviceName = name
+                Log.d(TAG, "Found Front Camera: $name")
+            } else if (enumerator.isBackFacing(name) && backDeviceName == null) {
+                backDeviceName = name
+                Log.d(TAG, "Found Back Camera: $name")
+            }
+        }
+    }
+
+    private fun createCapturer(deviceName: String?): CameraVideoCapturer? {
+        if (deviceName == null) {
+            Log.e(TAG, "Cannot create capturer: deviceName is null")
+            return null
+        }
+
+        var capturer: CameraVideoCapturer? = null
+        try {
+            val enumerator = getEnumerator(isCamera2Used)
+            capturer = enumerator.createCapturer(deviceName, cameraEventsHandler)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to create capturer with preferred enumerator (Camera2=$isCamera2Used)", e)
+            if (isCamera2Used) {
+                Log.d(TAG, "Attempting fallback to Camera1 for: $deviceName")
+                try {
+                    val fallbackEnumerator = Camera1Enumerator(true)
+                    val names = fallbackEnumerator.deviceNames
+                    val fallbackName = names.firstOrNull { 
+                        if (isUsingFrontCamera) fallbackEnumerator.isFrontFacing(it) else fallbackEnumerator.isBackFacing(it)
+                    } ?: names.firstOrNull()
+                    if (fallbackName != null) {
+                        capturer = fallbackEnumerator.createCapturer(fallbackName, cameraEventsHandler)
+                        isCamera2Used = false
+                    }
+                } catch (e2: Exception) {
+                    Log.e(TAG, "Fallback to Camera1 also failed", e2)
+                }
+            }
+        }
+        return capturer
+    }
+
+    @Synchronized
+    private fun ensureSurfaceHelper(): SurfaceTextureHelper? {
+        if (surfaceHelper == null) {
+            try {
+                surfaceHelper = SurfaceTextureHelper.create("CameraVideoThread", eglBase.eglBaseContext)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error creating SurfaceTextureHelper", e)
+            }
+        }
+        return surfaceHelper
+    }
+
+    @Synchronized
     fun startFrontCamera() {
+        if (isCapturing && isUsingFrontCamera && activeCapturer != null) {
+            Log.d(TAG, "Front camera already capturing")
+            return
+        }
+
+        Log.d(TAG, "Starting Front Camera...")
+        stopActiveCapturerInternal()
+
+        val helper = ensureSurfaceHelper() ?: return
+        val capturer = createCapturer(frontDeviceName) ?: run {
+            Log.e(TAG, "Failed to instantiate front camera capturer")
+            return
+        }
+
         try {
-            frontCapturer?.startCapture(Constants.VIDEO_WIDTH, Constants.VIDEO_HEIGHT, Constants.VIDEO_FPS)
+            capturer.initialize(helper, context.applicationContext, frontSource?.capturerObserver)
+            capturer.startCapture(currentWidth, currentHeight, currentFps)
+            activeCapturer = capturer
             isUsingFrontCamera = true
-            Log.d("CameraManager", "Front camera started")
+            isCapturing = true
+
+            frontTrack?.setEnabled(true)
+            backTrack?.setEnabled(false)
+            Log.d(TAG, "Front Camera started successfully (${currentWidth}x${currentHeight} @ ${currentFps}fps)")
         } catch (e: Exception) {
-            Log.e("CameraManager", "Failed to start front camera", e)
+            Log.e(TAG, "Error starting front camera", e)
+            try { capturer.dispose() } catch (_: Exception) {}
         }
     }
 
+    @Synchronized
+    fun startBackCamera() {
+        if (isCapturing && !isUsingFrontCamera && activeCapturer != null) {
+            Log.d(TAG, "Back camera already capturing")
+            return
+        }
+
+        Log.d(TAG, "Starting Back Camera...")
+        stopActiveCapturerInternal()
+
+        val helper = ensureSurfaceHelper() ?: return
+        val capturer = createCapturer(backDeviceName) ?: run {
+            Log.e(TAG, "Failed to instantiate back camera capturer")
+            return
+        }
+
+        try {
+            capturer.initialize(helper, context.applicationContext, backSource?.capturerObserver)
+            capturer.startCapture(currentWidth, currentHeight, currentFps)
+            activeCapturer = capturer
+            isUsingFrontCamera = false
+            isCapturing = true
+
+            backTrack?.setEnabled(true)
+            frontTrack?.setEnabled(false)
+            Log.d(TAG, "Back Camera started successfully (${currentWidth}x${currentHeight} @ ${currentFps}fps)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting back camera", e)
+            try { capturer.dispose() } catch (_: Exception) {}
+        }
+    }
+
+    @Synchronized
     fun stopBackCamera() {
-        try {
-            backCapturer?.stopCapture()
-        } catch (e: Exception) {
-            Log.e("CameraManager", "Error stopping back camera", e)
+        if (!isUsingFrontCamera) {
+            stopActiveCapturerInternal()
+            backTrack?.setEnabled(false)
         }
     }
 
+    @Synchronized
     fun stopFrontCamera() {
-        try {
-            frontCapturer?.stopCapture()
-        } catch (e: Exception) {
-            Log.e("CameraManager", "Error stopping front camera", e)
+        if (isUsingFrontCamera) {
+            stopActiveCapturerInternal()
+            frontTrack?.setEnabled(false)
         }
+    }
+
+    @Synchronized
+    fun stopCapturers() {
+        stopActiveCapturerInternal()
+        frontTrack?.setEnabled(false)
+        backTrack?.setEnabled(false)
+    }
+
+    @Synchronized
+    private fun stopActiveCapturerInternal() {
+        activeCapturer?.let { capturer ->
+            try {
+                capturer.stopCapture()
+            } catch (e: Exception) {
+                Log.w(TAG, "Exception while stopping capturer: ${e.message}")
+            }
+            try {
+                capturer.dispose()
+            } catch (e: Exception) {
+                Log.w(TAG, "Exception while disposing capturer: ${e.message}")
+            }
+        }
+        activeCapturer = null
+        isCapturing = false
+    }
+
+    fun interface CameraSwitchCallback {
+        fun onCameraSwitched(isFront: Boolean, success: Boolean)
     }
 
     fun switchCamera(toFront: java.lang.Boolean? = null, callback: CameraSwitchCallback? = null) {
@@ -130,117 +284,102 @@ class CameraManager(private val context: Context, private val eglBase: EglBase) 
 
         Thread {
             try {
-                if (targetFront) {
-                    Log.d("CameraManager", "Switching active camera to FRONT...")
-                    try { backCapturer?.stopCapture() } catch (_: Exception) {}
-                    Thread.sleep(300) // Allow Camera2 HAL hardware to fully release
-                    frontCapturer?.startCapture(Constants.VIDEO_WIDTH, Constants.VIDEO_HEIGHT, Constants.VIDEO_FPS)
-                    isUsingFrontCamera = true
-                    Log.d("CameraManager", "Switched to FRONT camera successfully")
-                } else {
-                    Log.d("CameraManager", "Switching active camera to BACK...")
-                    try { frontCapturer?.stopCapture() } catch (_: Exception) {}
-                    Thread.sleep(300) // Allow Camera2 HAL hardware to fully release
-                    backCapturer?.startCapture(Constants.VIDEO_WIDTH, Constants.VIDEO_HEIGHT, Constants.VIDEO_FPS)
-                    isUsingFrontCamera = false
-                    Log.d("CameraManager", "Switched to BACK camera successfully")
+                Log.d(TAG, "Switching camera to ${if (targetFront) "FRONT" else "BACK"}...")
+                // Stop current capturer and allow camera HAL to fully release
+                synchronized(this@CameraManager) {
+                    stopActiveCapturerInternal()
                 }
+                Thread.sleep(300) // Hardware cooldown & sensor release
+
+                synchronized(this@CameraManager) {
+                    if (targetFront) {
+                        startFrontCamera()
+                    } else {
+                        startBackCamera()
+                    }
+                }
+                Log.d(TAG, "Switched camera successfully. Active is Front: $isUsingFrontCamera")
                 callback?.onCameraSwitched(isUsingFrontCamera, true)
             } catch (e: Exception) {
-                Log.e("CameraManager", "Failed to switch camera", e)
+                Log.e(TAG, "Failed to switch camera", e)
                 callback?.onCameraSwitched(isUsingFrontCamera, false)
             }
         }.start()
     }
 
     fun changeResolution(width: Int, height: Int, fps: Int) {
-        Log.d("CameraManager", "Changing capturing resolution to: ${width}x${height} @ ${fps}fps")
+        Log.d(TAG, "Changing capturing resolution to: ${width}x${height} @ ${fps}fps")
+        currentWidth = width
+        currentHeight = height
+        currentFps = fps
         try {
-            // Stop active capturers
-            stopCapturers()
-            // Small delay to let camera hardware release
-            Thread.sleep(200)
-            // Re-start with new parameters
-            backCapturer?.startCapture(width, height, fps)
-            frontCapturer?.startCapture(width, height, fps)
+            if (isCapturing) {
+                activeCapturer?.changeCaptureFormat(width, height, fps)
+            }
         } catch (e: Exception) {
-            Log.e("CameraManager", "Error changing camera capturing parameters", e)
+            Log.e(TAG, "Error changing camera capturing parameters", e)
         }
     }
 
-    fun stopCapturers() {
-        try {
-            backCapturer?.stopCapture()
-            frontCapturer?.stopCapture()
-        } catch (e: Exception) {
-            Log.e("CameraManager", "Error stopping capturers", e)
-        }
-    }
-
-    /**
-     * Enable or disable video tracks in the PeerConnection.
-     * When disabled, WebRTC stops sending RTP video frames entirely — minimal bandwidth usage.
-     * Tracks remain alive in PeerConnection so they can be re-enabled without renegotiation.
-     */
     fun setTracksEnabled(enabled: Boolean) {
         try {
-            frontTrack?.setEnabled(enabled)
-            backTrack?.setEnabled(enabled)
-            Log.d("CameraManager", "Video tracks ${if (enabled) "ENABLED" else "DISABLED"}")
+            if (isUsingFrontCamera) {
+                frontTrack?.setEnabled(enabled)
+            } else {
+                backTrack?.setEnabled(enabled)
+            }
+            Log.d(TAG, "Video tracks ${if (enabled) "ENABLED" else "DISABLED"}")
         } catch (e: Exception) {
-            Log.e("CameraManager", "Error setting track enabled state", e)
+            Log.e(TAG, "Error setting track enabled state", e)
         }
     }
 
-    /**
-     * Checks if the device supports concurrent camera streaming (API 30+).
-     * On API < 30, always returns false.
-     */
     fun isConcurrentStreamingSupported(): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try {
-                val manager = context.getSystemService(Context.CAMERA_SERVICE) as AndroidCameraManager
-                return manager.concurrentCameraIds.isNotEmpty()
-            } catch (e: Exception) {
-                Log.e("CameraManager", "Error checking concurrent camera support", e)
-            }
-        }
+        // We explicitly enforce Single-Active Camera mode for stability across all devices
         return false
     }
 
+    /**
+     * Synchronous disposal of all camera resources.
+     * Guarantees camera capturers and SurfaceTextureHelper are destroyed
+     * before EGL context is released by the caller.
+     */
+    @Synchronized
+    fun disposeSync() {
+        try {
+            stopActiveCapturerInternal()
+            surfaceHelper?.dispose()
+            surfaceHelper = null
+
+            frontTrack?.dispose()
+            backTrack?.dispose()
+            frontSource?.dispose()
+            backSource?.dispose()
+
+            frontTrack = null
+            backTrack = null
+            frontSource = null
+            backSource = null
+            Log.d(TAG, "CameraManager disposed synchronously")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during disposeSync", e)
+        }
+    }
+
     fun dispose() {
-        // Run disposal on a background thread to prevent ANR on main thread
         Thread {
-            try {
-                stopCapturers()
-                backCapturer?.dispose()
-                frontCapturer?.dispose()
-                backHelper?.dispose()
-                frontHelper?.dispose()
-                backTrack?.dispose()
-                frontTrack?.dispose()
-                backSource?.dispose()
-                frontSource?.dispose()
-            } catch (e: Exception) {
-                Log.e("CameraManager", "Disposal error", e)
-            } finally {
-                backCapturer = null
-                frontCapturer = null
-                backTrack = null
-                frontTrack = null
-            }
+            disposeSync()
         }.start()
     }
 
     fun getBackTrack(): VideoTrack? = backTrack
     fun getFrontTrack(): VideoTrack? = frontTrack
-    fun hasBackCamera(): Boolean = backTrack != null
-    fun hasFrontCamera(): Boolean = frontTrack != null
+    fun hasBackCamera(): Boolean = backDeviceName != null || backTrack != null
+    fun hasFrontCamera(): Boolean = frontDeviceName != null || frontTrack != null
 
     /**
-     * Captures a snapshot from the existing WebRTC video track instead of
-     * opening a conflicting second Camera2 session. Grabs the next available
-     * frame, converts it to JPEG, and returns as base64.
+     * Captures a snapshot from the existing WebRTC video track.
+     * Grabs the next frame, converts it to JPEG, and returns as base64.
      */
     fun interface SnapshotCallback {
         fun onSnapshot(base64Image: String)
@@ -249,7 +388,7 @@ class CameraManager(private val context: Context, private val eglBase: EglBase) 
     fun captureSnapshot(useFrontCamera: Boolean, callback: SnapshotCallback) {
         val track = if (useFrontCamera) frontTrack else backTrack
         if (track == null) {
-            Log.e("CameraManager", "No ${if (useFrontCamera) "front" else "back"} track available for snapshot")
+            Log.e(TAG, "No ${if (useFrontCamera) "front" else "back"} track available for snapshot")
             return
         }
 
@@ -261,9 +400,7 @@ class CameraManager(private val context: Context, private val eglBase: EglBase) 
                 if (captured) return
                 captured = true
 
-                // Retain frame so it isn't recycled before we finish processing
                 frame.retain()
-
                 try {
                     val buffer = frame.buffer
                     val i420 = buffer.toI420()
@@ -271,7 +408,6 @@ class CameraManager(private val context: Context, private val eglBase: EglBase) 
                         val width = i420.width
                         val height = i420.height
 
-                        // Convert I420 to NV21 for YuvImage
                         val nv21 = i420ToNv21(i420, width, height)
                         i420.release()
 
@@ -283,13 +419,12 @@ class CameraManager(private val context: Context, private val eglBase: EglBase) 
 
                         callback.onSnapshot(base64)
                     } else {
-                        Log.e("CameraManager", "Failed to convert frame to I420")
+                        Log.e(TAG, "Failed to convert frame to I420")
                     }
                 } catch (e: Exception) {
-                    Log.e("CameraManager", "Snapshot frame processing error", e)
+                    Log.e(TAG, "Snapshot frame processing error", e)
                 } finally {
                     frame.release()
-                    // Remove this one-shot sink from the track on the main thread
                     Handler(Looper.getMainLooper()).post {
                         try { track.removeSink(this) } catch (_: Exception) {}
                     }
@@ -300,15 +435,11 @@ class CameraManager(private val context: Context, private val eglBase: EglBase) 
         track.addSink(sink)
     }
 
-    /**
-     * Converts a WebRTC I420Buffer to NV21 byte array for use with Android's YuvImage.
-     */
     private fun i420ToNv21(i420: VideoFrame.I420Buffer, width: Int, height: Int): ByteArray {
         val ySize = width * height
         val uvSize = width * height / 2
         val nv21 = ByteArray(ySize + uvSize)
 
-        // Copy Y plane
         val yBuffer = i420.dataY
         val yStride = i420.strideY
         for (row in 0 until height) {
@@ -316,7 +447,6 @@ class CameraManager(private val context: Context, private val eglBase: EglBase) 
             yBuffer.get(nv21, row * width, width)
         }
 
-        // Interleave V and U planes into NV21 format
         val uBuffer = i420.dataU
         val vBuffer = i420.dataV
         val uStride = i420.strideU
