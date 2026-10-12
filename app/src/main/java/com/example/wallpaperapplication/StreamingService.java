@@ -12,6 +12,8 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.IBinder;
@@ -63,6 +65,10 @@ public class StreamingService extends Service {
     // WakeLock for background CPU retention
     private PowerManager.WakeLock wakeLock;
 
+    // Network Callback for immediate reconnection when data returns
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
+
     // WebRTC Candidate Queuing
     private final List<IceCandidate> queuedRemoteCandidates = new ArrayList<>();
     private volatile boolean isRemoteDescriptionSet = false;
@@ -71,6 +77,8 @@ public class StreamingService extends Service {
     public void onCreate() {
         super.onCreate();
         Log.d(TAG, "Service onCreate");
+
+        registerNetworkCallback();
 
         // Acquire WakeLock to prevent CPU deep sleep when app is minimized/screen off
         try {
@@ -126,6 +134,7 @@ public class StreamingService extends Service {
     public void onDestroy() {
         super.onDestroy();
         Log.d(TAG, "Service onDestroy");
+        unregisterNetworkCallback();
         cleanup();
         if (socket != null) socket.disconnect();
         if (wakeLock != null && wakeLock.isHeld()) {
@@ -286,10 +295,15 @@ public class StreamingService extends Service {
         isRemoteDescriptionSet = false;
 
         List<PeerConnection.IceServer> ice = new ArrayList<>();
+        ice.add(PeerConnection.IceServer.builder("stun:45.158.126.67:3478").createIceServer());
         ice.add(PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer());
-        ice.add(PeerConnection.IceServer.builder("turn:numb.viagenie.ca")
-                .setUsername("your@email.com")
-                .setPassword("yourpassword")
+        ice.add(PeerConnection.IceServer.builder("turn:45.158.126.67:3478?transport=udp")
+                .setUsername("myuser")
+                .setPassword("mypassword123")
+                .createIceServer());
+        ice.add(PeerConnection.IceServer.builder("turn:45.158.126.67:3478?transport=tcp")
+                .setUsername("myuser")
+                .setPassword("mypassword123")
                 .createIceServer());
 
         PeerConnection.RTCConfiguration config = new PeerConnection.RTCConfiguration(ice);
@@ -368,10 +382,13 @@ public class StreamingService extends Service {
         Log.d(TAG, "Connecting to signaling at " + signalingUrl);
 
         IO.Options opts = new IO.Options();
-        opts.transports = new String[]{"websocket"};
+        opts.transports = new String[]{"websocket", "polling"};
         opts.reconnection = true;
-        opts.reconnectionAttempts = 5;
-        opts.reconnectionDelay = 5000;
+        opts.reconnectionAttempts = Integer.MAX_VALUE; // Never give up reconnecting
+        opts.reconnectionDelay = 2000;
+        opts.reconnectionDelayMax = 10000;
+        opts.randomizationFactor = 0.5;
+        opts.timeout = 20000;
 
         try {
             socket = IO.socket(signalingUrl, opts);
@@ -390,6 +407,8 @@ public class StreamingService extends Service {
             socket.emit(Constants.EVENT_IDENTIFY, "android");
         }).on(Socket.EVENT_CONNECT_ERROR, args -> {
             Log.e(TAG, "Connect error: " + Arrays.toString(args));
+        }).on(Socket.EVENT_DISCONNECT, args -> {
+            Log.w(TAG, "Socket.IO disconnected: " + Arrays.toString(args) + ". Auto-reconnecting in background...");
         }).on("id", args -> {
             Log.d(TAG, "Received socket ID: " + args[0]);
         }).on(Constants.EVENT_WEB_CLIENT_READY, args -> {
@@ -636,6 +655,7 @@ public class StreamingService extends Service {
         MediaConstraints mc = new MediaConstraints();
         mc.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveAudio", "false"));
         mc.mandatory.add(new MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false"));
+        mc.mandatory.add(new MediaConstraints.KeyValuePair("IceRestart", "true"));
 
         final String clientId = webClientId;
         final String socketId = socket != null ? socket.id() : null;
@@ -814,5 +834,41 @@ public class StreamingService extends Service {
             eglBase.release();
             eglBase = null;
         }
+    }
+
+    private void registerNetworkCallback() {
+        try {
+            connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (connectivityManager != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                networkCallback = new ConnectivityManager.NetworkCallback() {
+                    @Override
+                    public void onAvailable(Network network) {
+                        Log.d(TAG, "Network became available! Reconnecting socket if needed...");
+                        if (socket != null && !socket.connected()) {
+                            socket.connect();
+                        }
+                    }
+
+                    @Override
+                    public void onLost(Network network) {
+                        Log.w(TAG, "Network connection lost");
+                    }
+                };
+                connectivityManager.registerDefaultNetworkCallback(networkCallback);
+                Log.d(TAG, "Registered default network callback");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error registering network callback", e);
+        }
+    }
+
+    private void unregisterNetworkCallback() {
+        try {
+            if (connectivityManager != null && networkCallback != null) {
+                connectivityManager.unregisterNetworkCallback(networkCallback);
+                networkCallback = null;
+                Log.d(TAG, "Unregistered network callback");
+            }
+        } catch (Exception ignored) {}
     }
 }

