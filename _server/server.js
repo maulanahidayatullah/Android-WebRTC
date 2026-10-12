@@ -238,7 +238,7 @@ server.on('error', (error) => {
   console.error('Server error:', error);
 });
 
-const PORT = process.env.PORT || 9988;
+const PORT = process.env.PORT || 8080;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running at http://0.0.0.0:${PORT} (accessible at http://<Your Server IP Address>:${PORT})`);
 });

@@ -446,7 +446,7 @@ app.get('/api/debug/clients', (req, res) => {
   res.json(clients);
 });
 
-const PORT = process.env.PORT || 9988;
+const PORT = process.env.PORT || 8080;
 server.listen(PORT, '0.0.0.0', () => {
   log('SERVER', `Server running at http://localhost:${PORT}`);
   log('SERVER', `Debug API available at http://localhost:${PORT}/api/debug/stats`);

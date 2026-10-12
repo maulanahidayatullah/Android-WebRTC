@@ -4,7 +4,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "tunnel": "cloudflared.exe tunnel --url http://127.0.0.1:9988"
+    "tunnel": "cloudflared.exe tunnel --url http://127.0.0.1:8080"
   },
   "author": "Dhruv Athaide",
   "license": "MIT",
