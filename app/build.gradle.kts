@@ -18,6 +18,11 @@ android {
         // Enable vector drawable support
         vectorDrawables.useSupportLibrary = true
 
+        // Only include ARM CPU architectures (exclude x86/x86_64 emulator binaries)
+        ndk {
+            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
+        }
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
